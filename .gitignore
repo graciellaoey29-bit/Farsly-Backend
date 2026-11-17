@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database temporary files
+*.db-shm
+*.db-wal
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
