@@ -113,12 +113,25 @@ router.post('/', authenticate, authorize('customer'), (req, res) => {
     const orderId = `ORD-${Date.now()}`;
     const type = orderType || 'Takeaway';
 
+    // Free delivery promotion rules:
+    // Delivery orders over $30.00 qualify for free delivery ($0.00).
+    // Otherwise standard delivery fee of $3.00 applies.
+    const FREE_DELIVERY_THRESHOLD = 30.0;
+    const STANDARD_DELIVERY_FEE = 3.0;
+
+    let deliveryFee = 0;
+    if (type.toLowerCase() === 'delivery') {
+      deliveryFee = totalPrice >= FREE_DELIVERY_THRESHOLD ? 0 : STANDARD_DELIVERY_FEE;
+    }
+
+    const finalTotalPrice = Number((totalPrice + deliveryFee).toFixed(2));
+
     db.prepare(`
       INSERT INTO orders (id, customer_id, customer_name, order_type, items, total_price, status, notes, created_at)
       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'))
     `).run(
       orderId, req.user.id, customerName, type,
-      JSON.stringify(verifiedItems), totalPrice,
+      JSON.stringify(verifiedItems), finalTotalPrice,
       notes || ''
     );
 
