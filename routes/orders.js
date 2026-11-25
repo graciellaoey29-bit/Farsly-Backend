@@ -149,7 +149,7 @@ router.post('/', authenticate, authorize('customer'), (req, res) => {
 router.patch('/:id/status', authenticate, authorize('restaurant'), (req, res) => {
   try {
     const { status } = req.body;
-    const validStatuses = ['pending', 'processing', 'completed'];
+    const validStatuses = ['pending', 'processing', 'completed', 'cancelled'];
 
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({
@@ -169,6 +169,41 @@ router.patch('/:id/status', authenticate, authorize('restaurant'), (req, res) =>
   } catch (err) {
     console.error('PATCH /api/orders/:id/status error:', err);
     res.status(500).json({ error: 'Failed to update order status.' });
+  }
+});
+
+/* ──────────────────────────────────────────
+   POST /api/orders/:id/cancel  –  customer only
+   Cancel a pending order belonging to the logged-in customer
+   ────────────────────────────────────────── */
+router.post('/:id/cancel', authenticate, authorize('customer'), (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    // Verify ownership
+    if (existing.customer_id !== req.user.id) {
+      return res.status(403).json({ error: 'You do not have access to cancel this order.' });
+    }
+
+    // Only allow cancelling orders that are still pending
+    if (existing.status !== 'pending') {
+      return res.status(400).json({
+        error: `Cannot cancel an order with status "${existing.status}". Only pending orders can be cancelled.`
+      });
+    }
+
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(id);
+
+    const updatedRow = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    res.json(formatOrder(updatedRow));
+  } catch (err) {
+    console.error('POST /api/orders/:id/cancel error:', err);
+    res.status(500).json({ error: 'Failed to cancel order.' });
   }
 });
 

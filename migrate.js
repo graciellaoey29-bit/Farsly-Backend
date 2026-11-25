@@ -1,6 +1,6 @@
 /**
  * Farsly Database Migration Script
- * Safe and idempotent: creates required tables and indexes if they do not exist.
+ * Safe and idempotent: creates and updates required tables and indexes without data loss.
  * Can be run via: npm run migrate
  * Or imported and run programmatically.
  */
@@ -50,24 +50,93 @@ export function runMigrations(database = db) {
     `);
     console.log('  ✓ Table "menu_items" verified');
 
-    // 3. Orders table
+    // 3. Orders table (with 'cancelled' in status check constraint)
+    const existingOrdersTable = database.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='orders'"
+    ).get();
+
+    if (!existingOrdersTable) {
+      // Create new orders table with all statuses including 'cancelled'
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS orders (
+          id          TEXT    PRIMARY KEY,
+          customer_id INTEGER NOT NULL,
+          customer_name TEXT  NOT NULL DEFAULT '',
+          order_type  TEXT    DEFAULT 'Takeaway',
+          items       TEXT    NOT NULL DEFAULT '[]',
+          total_price REAL    NOT NULL DEFAULT 0,
+          status      TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'cancelled')),
+          notes       TEXT    DEFAULT '',
+          created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (customer_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+      `);
+      console.log('  ✓ Table "orders" created with cancelled status support');
+    } else if (existingOrdersTable.sql && !existingOrdersTable.sql.includes('cancelled')) {
+      // Migrate existing orders table check constraint to support 'cancelled'
+      console.log('  ➜ Upgrading "orders" check constraint to support "cancelled"...');
+      database.pragma('foreign_keys = OFF');
+      database.transaction(() => {
+        database.exec(`
+          CREATE TABLE orders_upgrade (
+            id          TEXT    PRIMARY KEY,
+            customer_id INTEGER NOT NULL,
+            customer_name TEXT  NOT NULL DEFAULT '',
+            order_type  TEXT    DEFAULT 'Takeaway',
+            items       TEXT    NOT NULL DEFAULT '[]',
+            total_price REAL    NOT NULL DEFAULT 0,
+            status      TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'cancelled')),
+            notes       TEXT    DEFAULT '',
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (customer_id) REFERENCES users(id)
+          );
+          INSERT INTO orders_upgrade SELECT * FROM orders;
+          DROP TABLE orders;
+          ALTER TABLE orders_upgrade RENAME TO orders;
+          CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+          CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+        `);
+      })();
+      database.pragma('foreign_keys = ON');
+      console.log('  ✓ Table "orders" check constraint upgraded successfully');
+    } else {
+      console.log('  ✓ Table "orders" verified');
+    }
+
+    // 4. Cart items table (for persistent multi-device customer cart sync)
     database.exec(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id          TEXT    PRIMARY KEY,
-        customer_id INTEGER NOT NULL,
-        customer_name TEXT  NOT NULL DEFAULT '',
-        order_type  TEXT    DEFAULT 'Takeaway',
-        items       TEXT    NOT NULL DEFAULT '[]',
-        total_price REAL    NOT NULL DEFAULT 0,
-        status      TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed')),
-        notes       TEXT    DEFAULT '',
-        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (customer_id) REFERENCES users(id)
+      CREATE TABLE IF NOT EXISTS cart_items (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL,
+        menu_item_id TEXT    NOT NULL,
+        quantity     INTEGER NOT NULL DEFAULT 1,
+        notes        TEXT    DEFAULT '',
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE,
+        UNIQUE(user_id, menu_item_id)
       );
-      CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
-      CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+      CREATE INDEX IF NOT EXISTS idx_cart_items_user_id ON cart_items(user_id);
     `);
-    console.log('  ✓ Table "orders" verified');
+    console.log('  ✓ Table "cart_items" verified');
+
+    // 5. Favorites table (for persistent user favorites sync)
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS favorites (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL,
+        menu_item_id TEXT    NOT NULL,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE,
+        UNIQUE(user_id, menu_item_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
+    `);
+    console.log('  ✓ Table "favorites" verified');
 
     console.log('✓ All database migrations applied successfully.\n');
     return { success: true, dbPath };

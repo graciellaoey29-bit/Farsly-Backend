@@ -10,7 +10,9 @@ node_modules/
 *.log
 npm-debug.log*
 
-# Database temporary files
+# Database
+*.db
+*.sqbpro
 *.db-shm
 *.db-wal
 

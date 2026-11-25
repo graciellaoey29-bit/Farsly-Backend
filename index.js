@@ -13,6 +13,10 @@ import { runMigrations } from './migrate.js';
 import authRoutes from './routes/auth.js';
 import menuRoutes from './routes/menu.js';
 import orderRoutes from './routes/orders.js';
+import cartRoutes from './routes/cart.js';
+import favoriteRoutes from './routes/favorites.js';
+import uploadRoutes from './routes/upload.js';
+import restaurantRoutes from './routes/restaurant.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,6 +118,10 @@ app.get('/', (_req, res) => {
       menu: '/api/menu',
       auth: '/api/auth',
       orders: '/api/orders',
+      cart: '/api/cart',
+      favorites: '/api/favorites',
+      upload: '/api/upload',
+      restaurantStats: '/api/restaurant/stats',
     },
   });
 });
@@ -140,6 +148,10 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/favorites', favoriteRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/restaurant', restaurantRoutes);
 
 /* ──────────────────────────────────────────
    404 fallback for API routes
